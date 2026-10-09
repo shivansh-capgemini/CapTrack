@@ -36,6 +36,8 @@ function freshDb() {
     },
     events: [],
     attendees: [],
+    // A device is one browser that has checked in; its token is the cookie.
+    devices: [],
     checkins: [],
   };
 }
@@ -43,6 +45,17 @@ function freshDb() {
 const store = createStore({ databaseUrl: process.env.DATABASE_URL, dataDir: DATA_DIR });
 let db = freshDb();
 const save = () => store.save(db);
+
+// Older data kept the cookie token on the attendee itself. Move it to a device.
+function migrateAttendeeTokens() {
+  for (const a of db.attendees) {
+    if (!a.token) continue;
+    const dev = { id: crypto.randomUUID(), token: a.token, attendeeId: a.id, createdAt: a.createdAt };
+    db.devices.push(dev);
+    for (const c of db.checkins) if (c.attendeeId === a.id && c.method !== 'admin') c.deviceId = dev.id;
+    delete a.token;
+  }
+}
 
 const ready = (async () => {
   const loaded = await store.load();
@@ -52,6 +65,8 @@ const ready = (async () => {
     db.events ||= [];
     db.attendees ||= [];
     db.checkins ||= [];
+    db.devices ||= [];
+    migrateAttendeeTokens();
   }
   // Lets a hosted deployment set the first admin password without exposing
   // the one-time setup screen to whoever finds the site first.
@@ -216,21 +231,34 @@ function validatePassword(pw) {
   return null;
 }
 
+// Clients can put anything in X-Forwarded-For; only the entry appended by our
+// own proxy is trustworthy, so count from the right (TRUST_PROXY=<hops>, default 1).
 function clientIp(req) {
-  const fwd = TRUST_PROXY && String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-  return fwd || req.socket.remoteAddress;
+  if (!TRUST_PROXY) return req.socket.remoteAddress;
+  const hops = Math.max(1, Number(process.env.TRUST_PROXY) || 1);
+  const parts = String(req.headers['x-forwarded-for'] || '').split(',').map((p) => p.trim()).filter(Boolean);
+  return parts[parts.length - hops] || req.socket.remoteAddress;
 }
 
 // Simple in-memory brute-force guard for the login endpoint.
+// Per address, plus a site-wide cap in case an attacker rotates addresses.
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const PER_IP_LIMIT = 5;
+const GLOBAL_LIMIT = 50;
 const loginFailures = new Map();
+let globalFailures = { count: 0, first: 0 };
+const fresh = (rec) => rec && Date.now() - rec.first < LOGIN_WINDOW_MS;
 function loginBlocked(ip) {
   const rec = loginFailures.get(ip);
-  return rec && rec.count >= 5 && Date.now() - rec.first < 15 * 60 * 1000;
+  return (fresh(rec) && rec.count >= PER_IP_LIMIT) || (fresh(globalFailures) && globalFailures.count >= GLOBAL_LIMIT);
 }
 function noteLoginFailure(ip) {
+  for (const [key, rec] of loginFailures) if (!fresh(rec)) loginFailures.delete(key);
   const rec = loginFailures.get(ip);
-  if (!rec || Date.now() - rec.first > 15 * 60 * 1000) loginFailures.set(ip, { count: 1, first: Date.now() });
-  else rec.count++;
+  if (fresh(rec)) rec.count++;
+  else loginFailures.set(ip, { count: 1, first: Date.now() });
+  if (fresh(globalFailures)) globalFailures.count++;
+  else globalFailures = { count: 1, first: Date.now() };
 }
 
 // ---------------------------------------------------------------------------
@@ -335,9 +363,23 @@ function requireAdmin(handler) {
 // Public API
 // ---------------------------------------------------------------------------
 
-function currentAttendee(req) {
+function currentDevice(req) {
   const token = req.cookies[ATTENDEE_COOKIE];
-  return token ? db.attendees.find((a) => a.token === token) || null : null;
+  return token ? db.devices.find((d) => d.token === token) || null : null;
+}
+
+function currentAttendee(req) {
+  const dev = currentDevice(req);
+  return dev ? db.attendees.find((a) => a.id === dev.attendeeId) || null : null;
+}
+
+function findOrCreateAttendee(email) {
+  let att = db.attendees.find((a) => a.email === email);
+  if (!att) {
+    att = { id: crypto.randomUUID(), email, createdAt: new Date().toISOString() };
+    db.attendees.push(att);
+  }
+  return att;
 }
 
 function meView(att) {
@@ -382,6 +424,7 @@ route('POST', '/api/public/checkin', async (req, res) => {
     return fail(res, 409, why);
   }
 
+  let dev = currentDevice(req);
   let att = currentAttendee(req);
   const headers = {};
   let method = 'auto';
@@ -389,24 +432,20 @@ route('POST', '/api/public/checkin', async (req, res) => {
     const v = validateEmail(body.email);
     if (v.error) return fail(res, 422, v.error);
     method = 'manual';
-    att = db.attendees.find((a) => a.email === v.email);
-    if (!att) {
-      att = {
-        id: crypto.randomUUID(),
-        email: v.email,
-        token: crypto.randomBytes(24).toString('hex'),
-        createdAt: new Date().toISOString(),
-      };
-      db.attendees.push(att);
+    att = findOrCreateAttendee(v.email);
+    if (!dev) {
+      dev = { id: crypto.randomUUID(), token: crypto.randomBytes(24).toString('hex'), createdAt: new Date().toISOString() };
+      db.devices.push(dev);
     }
-    headers['Set-Cookie'] = cookie(req, ATTENDEE_COOKIE, att.token, ATTENDEE_COOKIE_MAX_AGE);
+    dev.attendeeId = att.id;
+    headers['Set-Cookie'] = cookie(req, ATTENDEE_COOKIE, dev.token, ATTENDEE_COOKIE_MAX_AGE);
   }
   if (!att) return fail(res, 422, 'Enter your work email address.');
 
   let checkin = db.checkins.find((c) => c.eventId === ev.id && c.attendeeId === att.id);
   const already = Boolean(checkin);
   if (!checkin) {
-    checkin = { eventId: ev.id, attendeeId: att.id, at: new Date().toISOString(), method };
+    checkin = { eventId: ev.id, attendeeId: att.id, deviceId: dev.id, at: new Date().toISOString(), method };
     db.checkins.push(checkin);
   }
   await save();
@@ -418,33 +457,31 @@ route('POST', '/api/public/checkin', async (req, res) => {
   );
 });
 
-// Correct the email remembered on this device. Updates every past check-in too.
+// Correct the email remembered on this device. Moves the check-ins this device
+// made to the new address; check-ins made elsewhere under the old address stay
+// put, so nobody can rewrite another person's attendance by typing their email.
 route('PATCH', '/api/public/me', async (req, res) => {
   const body = await readBody(req);
+  const dev = currentDevice(req);
   const att = currentAttendee(req);
-  if (!att) return fail(res, 404, 'This device doesn’t have a saved email yet. Check in first.');
+  if (!dev || !att) return fail(res, 404, 'This device doesn\u2019t have a saved email yet. Check in first.');
   const v = validateEmail(body.email);
   if (v.error) return fail(res, 422, v.error);
   if (v.email === att.email) return send(res, 200, { me: meView(att) });
 
-  const other = db.attendees.find((a) => a.email === v.email);
-  if (other) {
-    // The new address already exists: fold this record's check-ins into it.
-    for (const c of db.checkins.filter((x) => x.attendeeId === att.id)) {
-      const dup = db.checkins.some((x) => x.attendeeId === other.id && x.eventId === c.eventId);
-      if (!dup) c.attendeeId = other.id;
-    }
-    db.checkins = db.checkins.filter((x) => x.attendeeId !== att.id);
-    db.attendees = db.attendees.filter((a) => a.id !== att.id);
-    await save();
-    return send(res, 200, { me: meView(other) }, {
-      'Set-Cookie': cookie(req, ATTENDEE_COOKIE, other.token, ATTENDEE_COOKIE_MAX_AGE),
-    });
+  const target = findOrCreateAttendee(v.email);
+  for (const c of db.checkins.filter((x) => x.attendeeId === att.id && x.deviceId === dev.id)) {
+    const dup = db.checkins.some((x) => x.attendeeId === target.id && x.eventId === c.eventId);
+    if (dup) c.attendeeId = null; // already recorded under the new address
+    else c.attendeeId = target.id;
   }
-  att.email = v.email;
-  att.updatedAt = new Date().toISOString();
+  db.checkins = db.checkins.filter((x) => x.attendeeId !== null);
+  dev.attendeeId = target.id;
+  // Drop the old address if nothing refers to it any more (e.g. a typo).
+  const inUse = db.checkins.some((x) => x.attendeeId === att.id) || db.devices.some((d) => d.attendeeId === att.id);
+  if (!inUse) db.attendees = db.attendees.filter((a) => a.id !== att.id);
   await save();
-  send(res, 200, { me: meView(att) });
+  send(res, 200, { me: meView(target) });
 });
 
 route('POST', '/api/public/forget', (req, res) => {
@@ -590,16 +627,7 @@ route('POST', '/api/admin/events/:id/checkins', requireAdmin(async (req, res, { 
   if (!ev) return;
   const v = validateEmail((await readBody(req)).email);
   if (v.error) return fail(res, 422, v.error);
-  let att = db.attendees.find((a) => a.email === v.email);
-  if (!att) {
-    att = {
-      id: crypto.randomUUID(),
-      email: v.email,
-      token: crypto.randomBytes(24).toString('hex'),
-      createdAt: new Date().toISOString(),
-    };
-    db.attendees.push(att);
-  }
+  const att = findOrCreateAttendee(v.email);
   if (db.checkins.some((c) => c.eventId === ev.id && c.attendeeId === att.id)) {
     return fail(res, 409, `${att.email} is already on the list.`);
   }

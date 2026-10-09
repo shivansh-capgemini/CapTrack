@@ -172,7 +172,7 @@
     let ev = null;
     if (id) ev = (await api('GET', `/api/admin/events/${id}`)).event;
     const now = new Date();
-    now.setMinutes(Math.ceil(now.getMinutes() / 5) * 5, 0, 0);
+    now.setMinutes(Math.floor(now.getMinutes() / 5) * 5, 0, 0); // starts open, not a few minutes from now
     const start = ev ? new Date(ev.startAt) : now;
     const end = ev ? new Date(ev.endAt) : new Date(now.getTime() + 2 * 60 * 60 * 1000);
 

@@ -8,6 +8,14 @@ const os = require('os');
 const path = require('path');
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'captrack-test-'));
+process.env.TRUST_PROXY = '1';
+// Data written by the first version kept the device cookie on the attendee.
+fs.writeFileSync(path.join(process.env.DATA_DIR, 'db.json'), JSON.stringify({
+  settings: { allowedDomains: ['capgemini.com'] },
+  events: [{ id: 'oldevt', title: 'Old', description: '', location: '', startAt: '2026-01-01T09:00:00.000Z', endAt: '2026-01-01T10:00:00.000Z', override: null, endedAt: null }],
+  attendees: [{ id: 'a-old', email: 'old@capgemini.com', token: 'legacytoken', createdAt: '2026-01-01T09:00:00.000Z' }],
+  checkins: [{ eventId: 'oldevt', attendeeId: 'a-old', at: '2026-01-01T09:05:00.000Z', method: 'manual' }],
+}));
 const { server, ready } = require('../server');
 
 let base;
@@ -39,6 +47,12 @@ function client() {
 const hours = (h) => new Date(Date.now() + h * 3600e3).toISOString();
 
 const admin = client();
+
+test('devices remembered by the old data format keep working', async () => {
+  const legacy = client();
+  const r = await legacy('GET', '/api/public/events', undefined, { headers: { Cookie: 'ct_att=legacytoken' } });
+  assert.strictEqual(r.body.me.email, 'old@capgemini.com');
+});
 let live, later;
 
 test('first run: setup sets the password once, then requires sign-in', async () => {
@@ -118,6 +132,24 @@ test('editing to an existing email merges without duplicates', async () => {
   assert.strictEqual((await jane('POST', '/api/public/checkin', { eventId: live.id })).body.alreadyCheckedIn, true);
 });
 
+test('typing someone else\'s email cannot rewrite their attendance', async () => {
+  const victim = client();
+  const v = await victim('POST', '/api/public/checkin', { eventId: live.id, email: 'victim@capgemini.com' });
+  assert.strictEqual(v.status, 200);
+  const attacker = client();
+  await attacker('POST', '/api/public/checkin', { eventId: live.id, email: 'victim@capgemini.com' });
+  const r = await attacker('PATCH', '/api/public/me', { email: 'attacker@capgemini.com' });
+  assert.strictEqual(r.body.me.email, 'attacker@capgemini.com');
+  const emails = (await admin('GET', `/api/admin/events/${live.id}`)).body.checkins.map((c) => c.email);
+  assert.ok(emails.includes('victim@capgemini.com'), 'victim keeps their check-in');
+  assert.ok(!emails.includes('attacker@capgemini.com'), 'attacker gains nothing they did not check in for');
+  assert.strictEqual((await victim('GET', '/api/public/events')).body.me.email, 'victim@capgemini.com');
+  // The victim can still correct their own address.
+  assert.strictEqual((await victim('PATCH', '/api/public/me', { email: 'victim2@capgemini.com' })).body.me.email, 'victim2@capgemini.com');
+  const after = (await admin('GET', `/api/admin/events/${live.id}`)).body.checkins.map((c) => c.email);
+  assert.ok(after.includes('victim2@capgemini.com') && !after.includes('victim@capgemini.com'));
+});
+
 test('admin manages allowed domains', async () => {
   assert.strictEqual((await admin('PUT', '/api/admin/settings', { allowedDomains: [] })).status, 422);
   assert.strictEqual((await admin('PUT', '/api/admin/settings', { allowedDomains: ['not a domain'] })).status, 422);
@@ -169,4 +201,18 @@ test('changing the password signs out other sessions', async () => {
   assert.strictEqual((await admin('POST', '/api/admin/password', { current: 'secret123', next: 'newsecret1' })).status, 200);
   assert.strictEqual((await admin('GET', '/api/admin/events')).status, 200);
   assert.strictEqual((await other('GET', '/api/admin/events')).status, 401);
+});
+
+test('sign-in lockout uses the proxy-added address, not a spoofed one', async () => {
+  const c = client();
+  const tryLogin = (xff, password) => c('POST', '/api/admin/login', { password }, { headers: { 'X-Forwarded-For': xff } });
+  for (let i = 0; i < 5; i++) await tryLogin(`10.0.0.${i}, 1.1.1.1`, 'wrongwrong');
+  assert.strictEqual((await tryLogin('10.9.9.9, 1.1.1.1', 'newsecret1')).status, 429, 'rotating the spoofable part does not help');
+  assert.strictEqual((await tryLogin('1.1.1.1, 2.2.2.2', 'newsecret1')).status, 200, 'other visitors are not locked out');
+});
+
+test('site-wide cap stops attackers who rotate real addresses', async () => {
+  const c = client();
+  for (let i = 0; i < 60; i++) await c('POST', '/api/admin/login', { password: 'wrongwrong' }, { headers: { 'X-Forwarded-For': `3.3.${i}.1` } });
+  assert.strictEqual((await c('POST', '/api/admin/login', { password: 'newsecret1' }, { headers: { 'X-Forwarded-For': '4.4.4.4' } })).status, 429);
 });

@@ -22,7 +22,7 @@ Environment variables:
 | `DATA_DIR` | `./data` | Where `db.json` (all data) is stored when `DATABASE_URL` isn't set |
 | `DATABASE_URL` | none | Postgres connection string. When set, data is stored there instead of a file |
 | `ADMIN_PASSWORD` | none | Sets the first admin password and skips the setup screen. Ignored once a password exists |
-| `TRUST_PROXY` | off (on for Render) | Read visitor addresses from `X-Forwarded-For` when running behind a proxy |
+| `TRUST_PROXY` | off (on for Render) | Behind a proxy or tunnel, read the visitor address from `X-Forwarded-For`. Set to the number of proxies in front of the app (usually `1`) |
 
 Locally, back up `data/db.json` to keep your events and attendance.
 
