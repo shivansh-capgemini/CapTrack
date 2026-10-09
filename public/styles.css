@@ -1,0 +1,140 @@
+/* CapTrack shared styles — Capgemini palette, Ubuntu type. */
+:root {
+  --cap-blue: #0070ad;
+  --cap-blue-deep: #005688;
+  --cap-sky: #12abdb;
+  --ink: #1a1446;
+  --ink-soft: #4b4874;
+  --mist: #eaf5fb;
+  --line: #cfe3ef;
+  --paper: #ffffff;
+  --sun: #ffb81c;
+  --ok: #0f8a5f;
+  --ok-tint: #e3f5ed;
+  --warn: #9a5b00;
+  --warn-tint: #fff3d6;
+  --danger: #c8102e;
+  --danger-tint: #fde7ea;
+  --radius-lg: 28px;
+  --radius-md: 14px;
+  --radius-sm: 8px;
+  --font: 'Ubuntu', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --shadow: 0 18px 50px -24px rgba(0, 86, 136, 0.45);
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; }
+
+body {
+  font-family: var(--font);
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--mist);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { line-height: 1.15; margin: 0; font-weight: 700; }
+p { margin: 0; }
+
+a { color: var(--cap-blue); }
+
+:focus-visible {
+  outline: 3px solid var(--cap-sky);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* ---- Buttons ------------------------------------------------------------ */
+.btn {
+  appearance: none;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  padding: 0.7em 1.4em;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  text-decoration: none;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
+}
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.55; cursor: progress; }
+.btn-primary { background: var(--cap-blue); color: #fff; }
+.btn-primary:hover { background: var(--cap-blue-deep); }
+.btn-ghost { background: transparent; color: var(--cap-blue); border-color: var(--line); }
+.btn-ghost:hover { border-color: var(--cap-blue); }
+.btn-danger { background: transparent; color: var(--danger); border-color: #f2b8c1; }
+.btn-danger:hover { background: var(--danger-tint); }
+.btn-ok { background: var(--ok); color: #fff; }
+.btn-ok:hover { background: #0b6b49; }
+.btn-sm { padding: 0.4em 0.95em; font-size: 0.88rem; }
+.link-btn {
+  background: none; border: 0; padding: 0; font: inherit; color: var(--cap-blue);
+  text-decoration: underline; text-underline-offset: 3px; cursor: pointer;
+}
+
+/* ---- Forms -------------------------------------------------------------- */
+.field { display: grid; gap: 0.35rem; }
+.field label { font-weight: 500; font-size: 0.95rem; }
+.field .hint { font-size: 0.85rem; color: var(--ink-soft); }
+input[type='text'], input[type='email'], input[type='password'],
+input[type='datetime-local'], textarea {
+  width: 100%;
+  font: inherit;
+  color: var(--ink);
+  background: var(--paper);
+  border: 2px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 0.75em 0.9em;
+  transition: border-color 0.15s;
+}
+input:hover, textarea:hover { border-color: #a9cde2; }
+input:focus, textarea:focus { outline: none; border-color: var(--cap-blue); }
+textarea { resize: vertical; min-height: 5em; }
+
+.error {
+  color: var(--danger);
+  background: var(--danger-tint);
+  border-radius: var(--radius-sm);
+  padding: 0.6em 0.85em;
+  font-size: 0.92rem;
+}
+.error:empty { display: none; }
+
+/* ---- Status pills ------------------------------------------------------- */
+.pill {
+  display: inline-flex; align-items: center; gap: 0.4em;
+  font-size: 0.8rem; font-weight: 500;
+  padding: 0.2em 0.75em; border-radius: 999px;
+  white-space: nowrap;
+}
+.pill::before { content: ''; width: 0.5em; height: 0.5em; border-radius: 50%; background: currentColor; }
+.pill-open { background: var(--ok-tint); color: var(--ok); }
+.pill-open::before { animation: pulse 1.6s ease-in-out infinite; }
+.pill-scheduled { background: #e4effa; color: var(--cap-blue); }
+.pill-paused { background: var(--warn-tint); color: var(--warn); }
+.pill-ended { background: #ecebf2; color: var(--ink-soft); }
+
+@keyframes pulse { 50% { opacity: 0.3; } }
+
+.toast {
+  position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 140%);
+  background: var(--ink); color: #fff; padding: 0.7em 1.3em; border-radius: 999px;
+  font-size: 0.95rem; transition: transform 0.25s ease; z-index: 50; max-width: calc(100% - 32px);
+}
+.toast.show { transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

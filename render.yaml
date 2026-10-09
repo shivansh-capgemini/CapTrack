@@ -1,0 +1,17 @@
+# Render Blueprint: New > Blueprint in the Render dashboard, pick this repo.
+services:
+  - type: web
+    name: captrack
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # Postgres connection string (e.g. from Neon). Render's free disk is wiped on restart.
+      - key: DATABASE_URL
+        sync: false
+      # Initial admin password, so nobody else can claim the setup screen.
+      - key: ADMIN_PASSWORD
+        sync: false
