@@ -104,7 +104,7 @@
           <input id="email" type="email" name="email" autocomplete="email" inputmode="email"
                  placeholder="firstname.lastname@${esc(state.domains[0] || 'capgemini.com')}" value="${esc(recalled())}" required>
           <div class="domains" aria-label="Accepted email domains">
-            ${state.domains.map((d) => `<span class="chip">@${esc(d)}</span>`).join('')}
+            ${state.domains.map((d) => `<button type="button" class="chip" data-d="${esc(d)}" aria-label="Use @${esc(d)}">@${esc(d)}</button>`).join('')}
           </div>
         </div>
         <p class="error" id="err" role="alert">${esc(errorMsg)}</p>
@@ -120,6 +120,13 @@
     const err = form.querySelector('#err');
     input.focus();
     form.querySelector('#back')?.addEventListener('click', renderPicker);
+    // Tapping a domain chip completes the address, replacing any half-typed domain.
+    form.querySelectorAll('.chip').forEach((c) => c.addEventListener('click', () => {
+      const suffix = '@' + c.dataset.d;
+      const v = input.value.trim();
+      if (!v.toLowerCase().endsWith(suffix.toLowerCase())) input.value = v.split('@')[0] + suffix;
+      input.focus();
+    }));
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = form.querySelector('button[type=submit]');
@@ -154,11 +161,11 @@
     app.innerHTML = `
       <div class="stamp" aria-hidden="true">
         <svg viewBox="0 0 120 120">
-          <defs><clipPath id="spade-clip"><path d="M104 4C90 16 54 26 32 48 14 66 12 92 30 106c16 12 40 10 54-4 10-10 14-24 22-36 8-12 14-34-2-62Z"/></clipPath></defs>
-          <path d="M104 4C90 16 54 26 32 48 14 66 12 92 30 106c16 12 40 10 54-4 10-10 14-24 22-36 8-12 14-34-2-62Z" fill="#dcecf6"/>
+          <defs><clipPath id="spade-clip"><path transform="translate(0 4.7) scale(0.07638)" d="m1570.4 844.8c-13.7-82.8-42.7-235.8-257.6-235.8-234.8 0-312.7 328.2-504.1 539.8-60.5 66.8-133.2 121.7-221.6 150.7q-149.1 50.1-298.1-6.2c-171.4-69.4-288.1-242.1-288.1-426.9 0-472.6 651.7-640.9 839.9-866.3h0.1q4.6 1.8 9.3 3.7 4.6 1.8 9.3 3.7 4.6 1.9 9.2 3.8 4.6 1.9 9.2 3.9c152.9 64 298.7 149.1 421.4 261.2 161.6 148.3 266.5 334.2 270.7 554.5 0.3 7.9 0.4 13.7 0.4 13.9z"/></clipPath></defs>
+          <path transform="translate(0 4.7) scale(0.07638)" d="m1570.4 844.8c-13.7-82.8-42.7-235.8-257.6-235.8-234.8 0-312.7 328.2-504.1 539.8-60.5 66.8-133.2 121.7-221.6 150.7q-149.1 50.1-298.1-6.2c-171.4-69.4-288.1-242.1-288.1-426.9 0-472.6 651.7-640.9 839.9-866.3h0.1q4.6 1.8 9.3 3.7 4.6 1.8 9.3 3.7 4.6 1.9 9.2 3.8 4.6 1.9 9.2 3.9c152.9 64 298.7 149.1 421.4 261.2 161.6 148.3 266.5 334.2 270.7 554.5 0.3 7.9 0.4 13.7 0.4 13.9z" fill="#dcecf6"/>
           <g clip-path="url(#spade-clip)"><rect class="fill" x="0" y="0" width="120" height="120" fill="#0070ad"/></g>
-          <path d="M84 102c10-10 14-24 22-36 4-6 9-8 12-6 2 10-2 26-12 34-6 5-10 6-12 6 2 4 6 6 10 7-8 5-20 6-28 2 4-2 6-4 8-7Z" fill="#12abdb"/>
-          <path class="tick" d="M42 72l12 12 24-26" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+          <path transform="translate(0 4.7) scale(0.07638)" d="m979.5 1072.6c9.1 127.5 101.2 219.5 244.3 217.6-107.3 105.9-312.4 156.9-481.8 156.9-92.5 0-169.9-19.6-204.9-56.1 142.3-18.1 256.2-125.8 271.7-246.1 191.2-211.6 269.2-539.9 504-539.9 214.9 0 243.9 153.1 257.5 235.8-1.9 189.5-153.4 349.3-349.6 349.3-92.4 0-171.4-32.9-241.2-117.5z" fill="#12abdb"/>
+          <path class="tick" d="M34 66l12 12 24-26" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </div>
       <h1 class="headline" tabindex="-1">${title}</h1>
